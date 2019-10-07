@@ -18,7 +18,7 @@ $OUTPUT_AUTOFLUSH = 1;
 
 # URI of service.
 my $base_uri = URI->new('http://www.brno.cz/sprava-mesta/volene-organy-mesta/'.
-	'zastupitelstvo-mesta-brna/clenove-zastupitelstva-mesta-brna/');
+	'zastupitelstvo-mesta-brna/');
 
 # Open a database handle.
 my $dt = Database::DumpTruck->new({
@@ -37,16 +37,19 @@ my $root = get_root($base_uri);
 
 # Look for items.
 my $telo = $root->find_by_attribute('id', 'telo');
-my @p = $telo->find_by_tag_name('div')->find_by_tag_name('p');
-foreach my $content (@{$p[1]->content}) {
-	if (ref $content eq 'HTML::Element') {
-		next;
+my @div = $telo->find_by_tag_name('div');
+my @cells = $div[3]->find_by_tag_name('td');
+
+foreach my $content ($cells[0], $cells[2]) {
+	my @names = split( qr{<br />}, $content->as_HTML);
+
+	foreach my $name (@names) {
+		my ($jmeno, $strana) = parse_name($name);
+		$dt->insert({
+			'Jmeno' => $jmeno,
+			'Strana' => $strana,
+		});
 	}
-	my ($jmeno, $strana) = parse_name($content);
-	$dt->insert({
-		'Jmeno' => $jmeno,
-		'Strana' => $strana,
-	});
 }
 
 # Get root of HTML::TreeBuilder object.
@@ -67,10 +70,11 @@ sub get_root {
 # Parse name.
 sub parse_name {
 	my $name_string = shift;
-	$name_string =~ s/^\s*\d+\.\s+//ms;
+	$name_string =~ s/^\s*\d+\..*?\</\</ms;
 	$name_string =~ s/\x{00a0}/ /ms;
-	my ($name, $party) = $name_string =~ m/^(.*?)\s+\((.*)\)\s*$/ms;
-	if ($party eq decode_utf8('ŽTB*')) {
+
+	my ($name, $party) = $name_string =~ m/^.*?<a href.*?>(.*?)<\/a>.*?\((.*)\)/ms;
+	if (defined $party && $party eq decode_utf8('ŽTB*')) {
 		$party = decode_utf8('Žít Brno s podporou Pirátů');
 	}
 	return ($name, $party);
